@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3x3 Scramble Generator</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #171a21;
+      --text: #f5f7fb;
+      --muted: #9aa4b2;
+      --accent: #4f8cff;
+      --border: #2a3140;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, Arial, sans-serif;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(900px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+    }
+
+    .scramble-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .scramble {
+      font-size: clamp(1.25rem, 3.5vw, 2rem);
+      line-height: 1.4;
+      padding: 18px;
+      background: #0d1016;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      min-height: 84px;
+      display: flex;
+      align-items: center;
+      word-break: break-word;
+      flex: 1 1 520px;
+    }
+
+    .top-face-preview {
+      display: grid;
+      grid-template-columns: repeat(3, 18px);
+      grid-template-rows: repeat(3, 18px);
+      gap: 2px;
+      padding: 4px;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 6px;
+      width: max-content;
+      flex: 0 0 auto;
+    }
+
+    .top-face-sticker {
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.18);
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .status {
+      font-size: 1rem;
+      min-height: 58px;
+      color: var(--muted);
+      margin-top: 14px;
+      padding: 18px;
+      background: #0d1016;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+    }
+
+    button {
+      border: 0;
+      background: var(--accent);
+      color: white;
+      padding: 12px 18px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 600;
+      font: inherit;
+    }
+
+    button:hover:enabled {
+      filter: brightness(1.08);
+    }
+
+    .meta {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>3x3 Scramble Generator</h1>
+    <p>All face moves. Simple top-face preview.</p>
+
+    <div class="scramble-row">
+      <div class="scramble" id="scramble"></div>
+      <div id="topFacePreview" class="top-face-preview" title="Top face preview"></div>
+    </div>
+
+    <div class="row">
+      <button id="generateBtn">Generate</button>
+      <button id="copyBtn">Copy</button>
+    </div>
+
+    <div class="status" id="status">Ready.</div>
+    <div class="meta">Uses standard 3x3 move faces: U D R L F B with ', 2.</div>
+  </main>
+
+  <script>
+    const scrambleEl = document.getElementById("scramble");
+    const statusEl = document.getElementById("status");
+    const copyBtn = document.getElementById("copyBtn");
+
+    const FACES = ["U", "D", "R", "L", "F", "B"];
+    const SUFFIXES = ["", "'", "2"];
+    const OPPOSITE = { U: "D", D: "U", R: "L", L: "R", F: "B", B: "F" };
+
+    const FACE_COLORS = {
+      U: "#ffffff",
+      D: "#ffd500",
+      F: "#00a651",
+      B: "#0051ba",
+      R: "#c41e3a",
+      L: "#ff5800"
+    };
+
+    function randomInt(max) {
+      if (window.crypto && crypto.getRandomValues) {
+        const arr = new Uint32Array(1);
+        let x;
+        const limit = Math.floor(0x100000000 / max) * max;
+        do {
+          crypto.getRandomValues(arr);
+          x = arr[0];
+        } while (x >= limit);
+        return x % max;
+      }
+      return Math.floor(Math.random() * max);
+    }
+
+    function createSolvedCube() {
+      return {
+        U: Array(9).fill("U"),
+        D: Array(9).fill("D"),
+        R: Array(9).fill("R"),
+        L: Array(9).fill("L"),
+        F: Array(9).fill("F"),
+        B: Array(9).fill("B")
+      };
+    }
+
+    function rotateFaceCW(face) {
+      return [
+        face[6], face[3], face[0],
+        face[7], face[4], face[1],
+        face[8], face[5], face[2]
+      ];
+    }
+
+    function moveU(c) {
+      c.U = rotateFaceCW(c.U);
+      const t = [c.F[0], c.F[1], c.F[2]];
+      [c.F[0], c.F[1], c.F[2]] = [c.L[0], c.L[1], c.L[2]];
+      [c.L[0], c.L[1], c.L[2]] = [c.B[0], c.B[1], c.B[2]];
+      [c.B[0], c.B[1], c.B[2]] = [c.R[0], c.R[1], c.R[2]];
+      [c.R[0], c.R[1], c.R[2]] = t;
+    }
+
+    function moveD(c) {
+      c.D = rotateFaceCW(c.D);
+      const t = [c.F[6], c.F[7], c.F[8]];
+      [c.F[6], c.F[7], c.F[8]] = [c.R[6], c.R[7], c.R[8]];
+      [c.R[6], c.R[7], c.R[8]] = [c.B[6], c.B[7], c.B[8]];
+      [c.B[6], c.B[7], c.B[8]] = [c.L[6], c.L[7], c.L[8]];
+      [c.L[6], c.L[7], c.L[8]] = t;
+    }
+
+    function moveR(c) {
+      c.R = rotateFaceCW(c.R);
+      const t = [c.U[2], c.U[5], c.U[8]];
+      [c.U[2], c.U[5], c.U[8]] = [c.F[2], c.F[5], c.F[8]];
+      [c.F[2], c.F[5], c.F[8]] = [c.D[2], c.D[5], c.D[8]];
+      [c.D[2], c.D[5], c.D[8]] = [c.B[6], c.B[3], c.B[0]];
+      [c.B[6], c.B[3], c.B[0]] = t;
+    }
+
+    function moveL(c) {
+      c.L = rotateFaceCW(c.L);
+      const t = [c.U[0], c.U[3], c.U[6]];
+      [c.U[0], c.U[3], c.U[6]] = [c.B[8], c.B[5], c.B[2]];
+      [c.B[8], c.B[5], c.B[2]] = [c.D[6], c.D[3], c.D[0]];
+      [c.D[6], c.D[3], c.D[0]] = [c.F[0], c.F[3], c.F[6]];
+      [c.F[0], c.F[3], c.F[6]] = t;
+    }
+
+    function moveF(c) {
+      c.F = rotateFaceCW(c.F);
+      const t = [c.U[6], c.U[7], c.U[8]];
+      [c.U[6], c.U[7], c.U[8]] = [c.L[8], c.L[5], c.L[2]];
+      [c.L[8], c.L[5], c.L[2]] = [c.D[2], c.D[1], c.D[0]];
+      [c.D[2], c.D[1], c.D[0]] = [c.R[0], c.R[3], c.R[6]];
+      [c.R[0], c.R[3], c.R[6]] = t;
+    }
+
+    function moveB(c) {
+      c.B = rotateFaceCW(c.B);
+      const t = [c.U[0], c.U[1], c.U[2]];
+      [c.U[0], c.U[1], c.U[2]] = [c.R[2], c.R[5], c.R[8]];
+      [c.R[2], c.R[5], c.R[8]] = [c.D[8], c.D[7], c.D[6]];
+      [c.D[8], c.D[7], c.D[6]] = [c.L[6], c.L[3], c.L[0]];
+      [c.L[6], c.L[3], c.L[0]] = t;
+    }
+
+    const MOVE_FUNCS = {
+      U: moveU,
+      D: moveD,
+      R: moveR,
+      L: moveL,
+      F: moveF,
+      B: moveB
+    };
+
+    function applyMove(cube, token) {
+      const face = token[0];
+      const fn = MOVE_FUNCS[face];
+      if (!fn) return;
+
+      let turns = 1;
+      if (token.endsWith("2")) turns = 2;
+      else if (token.endsWith("'")) turns = 3;
+
+      for (let i = 0; i < turns; i++) fn(cube);
+    }
+
+    function cubeFromScramble(scramble) {
+      const cube = createSolvedCube();
+      const tokens = scramble.trim().split(/\s+/).filter(Boolean);
+      for (const token of tokens) applyMove(cube, token);
+      return cube;
+    }
+
+    function renderTopFace(scramble) {
+      const preview = document.getElementById("topFacePreview");
+      const cube = cubeFromScramble(scramble);
+
+      preview.innerHTML = cube.U.map(face =>
+        `<div class="top-face-sticker" style="background:${FACE_COLORS[face]}"></div>`
+      ).join("");
+    }
+
+    function generateScramble(length = 20) {
+      const moves = [];
+
+      while (moves.length < length) {
+        const face = FACES[randomInt(FACES.length)];
+        const suffix = SUFFIXES[randomInt(SUFFIXES.length)];
+
+        const last = moves[moves.length - 1]?.[0];
+        const prev = moves[moves.length - 2]?.[0];
+
+        if (face === last) continue;
+        if (prev === face && last === OPPOSITE[face]) continue;
+
+        moves.push(face + suffix);
+      }
+
+      return moves.join(" ");
+    }
+
+    function makeScramble() {
+      const length = 19 + randomInt(3); // 19-21
+      const scramble = generateScramble(length);
+
+      scrambleEl.textContent = scramble;
+      renderTopFace(scramble);
+      statusEl.textContent = `Length: ${length}`;
+    }
+
+    document.getElementById("generateBtn").addEventListener("click", makeScramble);
+
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(scrambleEl.textContent);
+        const old = copyBtn.textContent;
+        copyBtn.textContent = "Copied";
+        setTimeout(() => { copyBtn.textContent = old; }, 800);
+      } catch {
+        const old = copyBtn.textContent;
+        copyBtn.textContent = "Failed";
+        setTimeout(() => { copyBtn.textContent = old; }, 800);
+      }
+    });
+
+    makeScramble();
+  </script>
+</body>
+</html>
